@@ -24,22 +24,18 @@
 
 
 namespace android {
-#ifndef FLAC_OFFLOAD_ENABLED
-#define AUDIO_FORMAT_FLAC 0x1D000000UL
+#ifndef AUDIO_EXTN_FORMATS_ENABLED
+#define AUDIO_FORMAT_WMA 0x12000000UL
+#define AUDIO_FORMAT_WMA_PRO 0x13000000UL
+#define AUDIO_FORMAT_FLAC 0x1B000000UL
+#define AUDIO_FORMAT_ALAC 0x1C000000UL
+#define AUDIO_FORMAT_APE 0x1D000000UL
 #endif
 
-#ifndef WMA_OFFLOAD_ENABLED
-#define AUDIO_FORMAT_WMA 0x13000000UL
-#define AUDIO_FORMAT_WMA_PRO 0x14000000UL
+#ifndef AAC_ADTS_OFFLOAD_ENABLED
+#define AUDIO_FORMAT_AAC_ADTS 0x1E000000UL
 #endif
 
-#ifndef ALAC_OFFLOAD_ENABLED
-#define AUDIO_FORMAT_ALAC 0x1F000000UL
-#endif
-
-#ifndef APE_OFFLOAD_ENABLED
-#define AUDIO_FORMAT_APE 0x20000000UL
-#endif
 #ifndef AUDIO_EXTN_AFE_PROXY_ENABLED
 #define AUDIO_DEVICE_OUT_PROXY 0x1000000
 #endif
@@ -63,7 +59,22 @@ public:
 
         virtual bool isOffloadSupported(const audio_offload_info_t& offloadInfo);
 
-        // true if given state represents a device in a telephony or VoIP call
+        virtual status_t getInputForAttr(const audio_attributes_t *attr,
+                                         audio_io_handle_t *input,
+                                         audio_session_t session,
+                                         uid_t uid,
+                                         const audio_config_base_t *config,
+                                         audio_input_flags_t flags,
+                                         audio_port_handle_t *selectedDeviceId,
+                                         input_type_t *inputType,
+                                         audio_port_handle_t *portId);
+        // indicates to the audio policy manager that the input starts being used.
+        virtual status_t startInput(audio_io_handle_t input,
+                                    audio_session_t session);
+        // indicates to the audio policy manager that the input stops being used.
+        virtual status_t stopInput(audio_io_handle_t input,
+                                   audio_session_t session);
+        virtual void closeAllInputs();
 
 protected:
 
@@ -73,24 +84,34 @@ protected:
                                                    audio_devices_t device,
                                                    int delayMs = 0, bool force = false);
 
+        // selects the most appropriate device on output for current state
+        // must be called every time a condition that affects the device choice for a given output is
+        // changed: connected device, phone state, force use, output start, output stop..
+        // see getDeviceForStrategy() for the use of fromCache parameter
+        audio_devices_t getNewOutputDevice(const sp<AudioOutputDescriptor>& outputDesc,
+                                           bool fromCache);
         // returns true if given output is direct output
         bool isDirectOutput(audio_io_handle_t output);
 
         // if argument "device" is different from AUDIO_DEVICE_NONE,  startSource() will force
         // the re-evaluation of the output device.
-        status_t startSource(const sp<AudioOutputDescriptor>& outputDesc,
+        status_t startSource(sp<AudioOutputDescriptor> outputDesc,
                              audio_stream_type_t stream,
                              audio_devices_t device,
-                             const char *address,
                              uint32_t *delayMs);
-         status_t stopSource(const sp<AudioOutputDescriptor>& outputDesc,
+         status_t stopSource(sp<AudioOutputDescriptor> outputDesc,
                             audio_stream_type_t stream,
                             bool forceDeviceUpdate);
-        // event is one of STARTING_OUTPUT, STARTING_BEACON, STOPPING_OUTPUT, STOPPING_BEACON   313
-        // returns 0 if no mute/unmute event happened, the largest latency of the device where   314
-        //   the mute/unmute happened 315
+        // event is one of STARTING_OUTPUT, STARTING_BEACON, STOPPING_OUTPUT, STOPPING_BEACON
+        // returns 0 if no mute/unmute event happened, the largest latency of the device where
+        //   the mute/unmute happened
         uint32_t handleEventForBeacon(int){return 0;}
         uint32_t setBeaconMute(bool){return 0;}
+#ifdef VOICE_CONCURRENCY
+        static audio_output_flags_t getFallBackPath();
+        int mFallBackflag;
+#endif /*VOICE_CONCURRENCY*/
+        void moveGlobalEffect();
 
         // handle special cases for sonification strategy while in call: mute streams or replace by
         // a special tone in the device used for communication
@@ -113,15 +134,27 @@ private:
                 audio_channel_mask_t channelMask,
                 audio_output_flags_t flags,
                 const audio_offload_info_t *offloadInfo);
+        // internal method to fill offload info in case of Direct PCM
+        status_t getOutputForAttr(const audio_attributes_t *attr,
+                audio_io_handle_t *output,
+                audio_session_t session,
+                audio_stream_type_t *stream,
+                uid_t uid,
+                const audio_config_t *config,
+                audio_output_flags_t flags,
+                audio_port_handle_t *selectedDeviceId,
+                audio_port_handle_t *portId);
         // Used for voip + voice concurrency usecase
         int mPrevPhoneState;
 #ifdef VOICE_CONCURRENCY
         int mvoice_call_state;
 #endif
-#ifdef FM_POWER_OPT
+#ifdef RECORD_PLAY_CONCURRENCY
+        // Used for record + playback concurrency
+        bool mIsInputRequestOnProgress;
+#endif
         float mPrevFMVolumeDb;
         bool mFMIsActive;
-#endif
 };
 
 };
